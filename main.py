@@ -1,84 +1,55 @@
-import base64
-import requests
-import io
-from PIL import Image
-from dotenv import load_dotenv
+# main.py
 import os
-import logging
+import argparse
+import requests
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+DEFAULT_API = os.getenv("API_URL", "http://127.0.0.1:8000")
 
-load_dotenv()
 
-GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+def post_analyze(session: requests.Session, api: str, query: str, image_path: str = None):
+    data = {"query": query}
+    files = None
+    if image_path:
+        files = {"image_file": open(image_path, "rb")}
+        resp = session.post(f"{api}/analyze", data=data, files=files, timeout=120)
+    else:
+        resp = session.post(f"{api}/analyze", data=data, timeout=120)
+    return resp
 
-GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-if not GROQ_API_KEY:
-    raise ValueError("GROQ API KEY is not set in the .env file")
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--api", default=DEFAULT_API)
+    parser.add_argument("--image", help="Path to image file for first request")
+    parser.add_argument("--query", required=True, help="Query to send")
+    args = parser.parse_args()
 
-def process_image(image_path, query):
+    s = requests.Session()
+    print(f"Using API: {args.api}")
+
+    # First request (with image if provided)
+    resp = post_analyze(s, args.api, args.query, image_path=args.image)
+    if resp.status_code == 200:
+        print("AI:", resp.json().get("answer"))
+    else:
+        print("Error:", resp.status_code, resp.text)
+        return
+
+    # Follow-ups interactively
     try:
-        with open(image_path, "rb") as image_file:
-            image_content = image_file.read()
-            encoded_image = base64.b64encode(image_content).decode("utf-8")
-        try:
-            img = Image.open(io.BytesIO(image_content))
-            img.verify()
-        except Exception as e:
-            logger.error(f"Invalid image format: {str(e)}")
-            return {"error": f"Invalid image format: {str(e)}"}
-        messages = [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": query},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{encoded_image}"}}
-                ]
-            }
-        ]
-        def make_api_request(model):
-            response = requests.post(
-                GROQ_API_URL, 
-                json={
-                    "model": model, 
-                    "messages": messages, 
-                    "max_tokens": 1000
-                },
-                headers = {
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json"
-                },
-                timeout = 30
-            )
-            return response
-        
-        '''llama_11b_response = make_api_request("llama-3.2-11b-vision-preview")
-        llama_90b_response = make_api_request("llama-3.2-90b-vision-preview")'''
-        llama_scout_response = make_api_request("meta-llama/llama-4-scout-17b-16e-instruct")
-        llama_maverick_response = make_api_request("meta-llama/llama-4-maverick-17b-128e-instruct")
-
-
-        responses = {}
-        for model, response in [("llamascout", llama_scout_response), ("llamamaverick", llama_maverick_response)]:
-            if response.status_code == 200:
-                result = response.json()
-                answer = result["choices"][0]["message"]["content"]
-                logger.info(f"Processed response from {model} API : {answer}")
-                responses[model] = answer
+        while True:
+            q = input("Follow-up (blank to exit): ").strip()
+            if not q:
+                break
+            r2 = post_analyze(s, args.api, q, image_path=None)
+            if r2.status_code == 200:
+                print("AI:", r2.json().get("answer"))
             else:
-                logger.error(f"Error from {model} API : {response.status_code} - {response.text}")
-                responses[model] = f"Error from {model} API : {response.status_code}"
-        
-        return responses
+                print("Error:", r2.status_code, r2.text)
+                break
+    except KeyboardInterrupt:
+        print("\nExiting.")
 
-    except Exception as e:
-        logger.error(f"An unexpected error occurred : {str(e)}")
-        return {"error": f"An unexpected error occurred : {str(e)}"}
 
 if __name__ == "__main__":
-    image_path = "test1.png"
-    query = "what are the encoders in this picture?"
-    result = process_image(image_path, query)
-    print(result)
+    main()
