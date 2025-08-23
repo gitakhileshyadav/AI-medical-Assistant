@@ -235,6 +235,13 @@ async def home(request: Request):
 async def health():
     return "ok"
 
+@app.get("/about", response_class=HTMLResponse)
+async def about(request: Request):
+    sid = get_session_id(request)
+    resp = templates.TemplateResponse("about.html", {"request": request})
+    resp.set_cookie(SESSION_COOKIE_NAME, sid, httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+    return resp
+
 
 @app.post("/analyze")
 async def analyze(request: Request, query: str = Form(...), image_file: Optional[UploadFile] = File(None)):
