@@ -1,29 +1,3 @@
-# app.py (production-ready)
-"""
-Production-ready FastAPI app for the GenAI Medical Assistant.
-
-Key production-ready features included here:
-- CORS support via ALLOWED_ORIGINS environment variable
-- Simple request-size guard for uploads (MAX_IMAGE_MB)
-- Improved logging and error handling
-- Health endpoint
-- In-memory session store with clear comments and guidance to replace with Redis for multi-instance deployments
-- Graceful Groq API call with retries and controlled timeouts
-- Static files + Jinja2 templates mount as before
-
-To run locally:
-    pip install -r requirements.txt
-    export GROQ_API_KEY=<your_key>           # optional if you only test locally without calling Groq
-    export ALLOWED_ORIGINS=http://localhost:3000,https://your-vercel-domain.vercel.app
-    uvicorn app:app --reload --host 0.0.0.0 --port 8000
-
-For production (render/gunicorn):
-    gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT --timeout 120
-
-IMPORTANT: The in-memory `sessions` dict is not suitable for multi-instance production. Replace it
-with a Redis store (or database) if you deploy to more than one process or machine.
-"""
-
 import os
 import io
 import time
@@ -64,10 +38,10 @@ COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # CORS
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
-# If empty, allow all origins for local dev. Be explicit in production.
+# If empty, allow all origins for local dev
 ALLOW_ALL_ORIGINS = len([o for o in ALLOWED_ORIGINS if o.strip()]) == 0
 
-# ----------------- APP INIT -----------------
+# -------------------- APP INIT -----------------
 os.makedirs("static", exist_ok=True)
 app = FastAPI(title="GenAI Medical Assistant")
 
@@ -97,7 +71,7 @@ else:
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# In-memory session store. Replace with Redis for production multi-instance deployments.
+#Replace with Redis for production multi-instance deployments.
 # sessions: { session_id: {"history": [...], "last_image": "data:image/..;base64,...", "created": ts } }
 sessions: Dict[str, Dict[str, Any]] = {}
 
@@ -328,7 +302,7 @@ async def reset(request: Request):
     return resp
 
 
-# ----------------- START (for local development) -----------------
+# START (for local development)
 if __name__ == "__main__":
     import uvicorn
 

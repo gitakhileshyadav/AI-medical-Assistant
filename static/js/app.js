@@ -1,5 +1,3 @@
-// static/js/app.js
-// Dynamically load external script and return Promise when loaded
 function loadScript(src) {
   return new Promise((resolve, reject) => {
     if (document.querySelector(`script[src="${src}"]`)) {
