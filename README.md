@@ -36,8 +36,6 @@
 - [🧪 Quality Assurance](#-quality-assurance)
 - [🚀 Performance Optimization](#-performance-optimization)
 - [🔮 Innovation Roadmap](#-innovation-roadmap)
-- [🤝 Join Our Community](#-join-our-community)
-- [📜 License](#-license)
 
 ---
 
