@@ -4,21 +4,18 @@
   <!-- Basic SEO -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>GenAI Medical Assistant — Image-first Disease Analysis</title>
+  <title>MedVision— Image-first Disease Analysis</title>
   <meta name="description" content="Upload a medical image and get AI-assisted analysis. Ask follow-up questions about the diagnosis." />
 
-  <!-- Preconnect for CDNs -->
   <link rel="preconnect" href="https://cdnjs.cloudflare.com" crossorigin>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
 
-  <!-- External stylesheet (cached) -->
   <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body class="page">
-  <!-- Fullscreen animated background container -->
+
   <div id="vanta-bg" aria-hidden="true"></div>
 
-  <!-- Header (semantic) -->
   <header class="site-header" role="banner">
     <div class="brand" itemscope itemtype="http://schema.org/Organization">
       <div class="logo" aria-hidden="true">
@@ -28,7 +25,7 @@
         </svg>
       </div>
       <div>
-        <h1 itemprop="name" style="margin:0; font-size:15px">GenAI Medical Assistant</h1>
+        <h1 itemprop="name" style="margin:0; font-size:15px">MedVision Medical Assistant</h1>
         <div class="muted" style="font-size:12px">AI-assisted image diagnosis</div>
       </div>
     </div>
@@ -40,10 +37,8 @@
     </nav>
   </header>
 
-  <!-- Main content: chat app card -->
   <main class="site-main" role="main">
     <article class="ui-card" aria-labelledby="app-title">
-      <!-- left: upload & preview -->
       <section class="panel-left" aria-labelledby="controls-title">
         <div>
           <div id="controls-title" style="font-weight:800; font-size:16px">Upload & Preview</div>
@@ -63,7 +58,6 @@
         <div class="small muted" style="font-size:13px">Supported: PNG, JPG, JPEG. We resize images client-side to reduce upload size.</div>
       </section>
 
-      <!-- right: chat -->
       <section class="panel-right" aria-labelledby="chat-title">
         <div class="chat-header">
           <div id="chat-title" style="font-weight:700; font-size:16px">Chat & Analysis</div>
@@ -80,10 +74,9 @@
     </article>
   </main>
 
-  <!-- Footer -->
   <footer class="site-footer" role="contentinfo">
     <div>
-      <div style="font-weight:700">GenAI Medical Assistant</div>
+      <div style="font-weight:700">Med Vision</div>
       <div class="muted" style="font-size:13px">Trusted by researchers • Not a substitute for professional medical advice</div>
     </div>
     <div>
@@ -95,7 +88,6 @@
     </div>
   </footer>
 
-  <!-- Load app JS (which will dynamically load Three.js + Vanta) -->
   <script src="/static/js/app.js" defer></script>
 </body>
 </html>

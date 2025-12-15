@@ -19,7 +19,6 @@ from PIL import Image
 
 load_dotenv()
 
-# ----------------- CONFIG -----------------
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 logger = logging.getLogger("genai")
@@ -27,25 +26,20 @@ logger = logging.getLogger("genai")
 GROQ_API_URL = os.getenv("GROQ_API_URL", "https://api.groq.com/openai/v1/chat/completions")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-# Max upload size guard (in megabytes)
 MAX_IMAGE_MB = float(os.getenv("MAX_IMAGE_MB", "6"))
 MAX_IMAGE_BYTES = int(MAX_IMAGE_MB * 1024 * 1024)
 
-# Session cookie settings
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "session_id")
 COOKIE_SECURE = os.getenv("COOKIE_SECURE", "true").lower() in ("1", "true", "yes")
 COOKIE_SAMESITE = os.getenv("COOKIE_SAMESITE", "lax")
 
 # CORS
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",") if os.getenv("ALLOWED_ORIGINS") else []
-# If empty, allow all origins for local dev
 ALLOW_ALL_ORIGINS = len([o for o in ALLOWED_ORIGINS if o.strip()]) == 0
 
-# -------------------- APP INIT -----------------
 os.makedirs("static", exist_ok=True)
 app = FastAPI(title="GenAI Medical Assistant")
 
-# Add useful middlewares
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
 if ALLOW_ALL_ORIGINS:
@@ -71,8 +65,7 @@ else:
 templates = Jinja2Templates(directory="templates")
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-#Replace with Redis for production multi-instance deployments.
-# sessions: { session_id: {"history": [...], "last_image": "data:image/..;base64,...", "created": ts } }
+#For redis use only
 sessions: Dict[str, Dict[str, Any]] = {}
 
 # ----------------- HELPERS -----------------
@@ -141,13 +134,13 @@ def prepare_user_message(query: str, data_url: Optional[str] = None):
     return {"role": "user", "content": query}
 
 
-# ----------------- External LLM call (Groq) -----------------
+# Grok LLM
 
 def call_groq_api(messages: List[Dict[str, Any]], max_retries: int = 3, timeout: int = 60) -> requests.Response:
     if not GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY is not set. Set the key in .env or env variables.")
 
-    # shrink images inside messages (server-side guard)
+    #shrink images 
     for m in messages:
         content = m.get("content")
         if isinstance(content, list):
@@ -177,7 +170,6 @@ def call_groq_api(messages: List[Dict[str, Any]], max_retries: int = 3, timeout:
             if 200 <= resp.status_code < 300:
                 return resp
             if 400 <= resp.status_code < 500 and resp.status_code != 429:
-                # client error -> return immediately
                 logger.error("Client error from Groq: %s %s", resp.status_code, resp.text[:1000])
                 return resp
             logger.warning("Server error from Groq (will retry if attempts left): %s %s", resp.status_code, resp.text[:1000])
@@ -194,13 +186,10 @@ def call_groq_api(messages: List[Dict[str, Any]], max_retries: int = 3, timeout:
     )
 
 
-# ----------------- ROUTES -----------------
-
 @app.get("/", response_class=HTMLResponse)
 async def home(request: Request):
     sid = get_session_id(request)
     resp = templates.TemplateResponse("index.html", {"request": request})
-    # Cookie attributes: httponly, samesite, secure when in production
     resp.set_cookie(SESSION_COOKIE_NAME, sid, httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
     return resp
 
@@ -229,7 +218,6 @@ async def analyze(request: Request, query: str = Form(...), image_file: Optional
 
         provided_data_url = None
 
-        # If file uploaded, read and validate
         if image_file is not None:
             contents = await image_file.read()
             try:
@@ -239,14 +227,24 @@ async def analyze(request: Request, query: str = Form(...), image_file: Optional
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
             provided_data_url = bytes_to_data_url(contents, content_type=image_file.content_type or "image/jpeg")
 
-        # If a new image was uploaded -> reset history and store image
         if provided_data_url:
             session["last_image"] = provided_data_url
-            # Reset history and add helpful system prompt
+
             session["history"] = [
                 {
                     "role": "system",
-                    "content": "You are a careful medical assistant. Provide likely diagnoses from the image, quantify uncertainty, and always recommend clinical confirmation.",
+                    "content": "You are MedVision (v2.1), an AI radiologist.Goals: 1.Simplify medical reports while aligning with latest ACR/RSNA/WHO 2025 standards.2. Extract, interpret, and summarize findings even from incomplete input.   3. Always return output in the provided JSON + summary format.4. Include confidence levels, guideline citations, and “AI-generated” disclaimer.5. Flag urgent findings with ⚠️ and provide structured recommendations."
+                                "🩺 Study: CT Chest (2025-11-06)"
+"Model: MedVision-Rad v2.1 | Guideline: ACR Lung Nodule 2025"
+"Key Finding:"
+"- A 9 mm spiculated nodule in the right upper lobe (confidence: 0.93)"
+"Impression:"
+"1. Likely early-stage pulmonary malignancy (moderate confidence)"
+"2. No pulmonary embolism detected"
+"Recommendation:"
+"→ Follow-up CT in 6 months as per ACR Lung Nodule Guidelines (2025 Section 3.1)"
+"Patient Summary:"
+"A small irregular growth was found in your right lung. It needs a repeat scan in 6 months to monitor any changes."
                 }
             ]
             user_msg = prepare_user_message(query, provided_data_url)
@@ -258,7 +256,6 @@ async def analyze(request: Request, query: str = Form(...), image_file: Optional
             user_msg = prepare_user_message(query)
             session["history"].append(user_msg)
 
-        # Call Groq with retry + server-side shrink of image if needed
         try:
             resp = call_groq_api(session["history"])
         except RuntimeError as re:
@@ -278,8 +275,7 @@ async def analyze(request: Request, query: str = Form(...), image_file: Optional
 
         # Save assistant reply to history
         session["history"].append({"role": "assistant", "content": answer})
-
-        # Make sure cookie is present for clients that didn't have it yet
+        
         response = JSONResponse({"answer": answer})
         response.set_cookie(SESSION_COOKIE_NAME, sid, httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
         return response
