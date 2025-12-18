@@ -41,7 +41,7 @@ async function startVanta() {
   }
 }
 
-/* ---------- App behavior: chat + file handling ---------- */
+//App behavior: chat + file handling
 document.addEventListener('DOMContentLoaded', async () => {
   await startVanta();
 
