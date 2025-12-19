@@ -17,6 +17,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 import requests
 from PIL import Image
 
+from json_pipeline import json_to_text
+
 load_dotenv()
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -153,7 +155,7 @@ def call_groq_api(messages: List[Dict[str, Any]], max_retries: int = 3, timeout:
     payload = {
         "model": os.getenv("GROQ_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct"),
         "messages": messages,
-        "max_tokens": int(os.getenv("GROQ_MAX_TOKENS", "300")),
+        "max_tokens": int(os.getenv("GROQ_MAX_TOKENS", "1000")),
         "temperature": float(os.getenv("GROQ_TEMPERATURE", "0.2")),
     }
 
@@ -241,9 +243,56 @@ ABSOLUTE RULES:
 2. NEVER invent patient identity, lab values, procedures, sites, or history.
 3. Medical knowledge is for interpretation ONLY, not data creation.
 
-PATIENT IDENTITY RULE:
-- Copy patient name, age, sex, ID verbatim if present.
-- If missing → "Not reported".
+INTENT HANDLING:
+
+A) FULL REPORT ANALYSIS MODE
+Trigger when the user intent is similar to:
+"analyze this report", "analyze", "summarize", "give report analysis"
+
+Analyze the pathology report and output ONLY in the following structure:
+
+1. Summary:
+   - Brief overall summary of the report (2–3 lines max).
+
+2. Key Findings:
+   - List the most relevant abnormal and borderline findings with values and units.
+
+3. Critical Abnormalities:
+   - List only clinically significant or panic-range abnormalities.
+
+4. Severity Level:
+   - Classify overall severity as: Normal / Mild / Moderate / Severe / Critical.
+
+5. Confidence Score:
+   - Provide a confidence score (0–100%) based on report completeness and clarity.
+
+6. Expert Recommendation:
+   - Provide non-diagnostic, pathology-focused recommendations 
+     (e.g., repeat test, clinical correlation advised, urgent review).
+
+7. Source Referenced:
+   - Cite standard pathology references only 
+     (e.g., CLSI, WHO laboratory guidelines, standard reference ranges).
+B) REPORT-RELATED QUERY MODE
+Trigger when the user asks questions related to the SAME pathology report and "Only answer to that question Specificily", such as: 
+- "What is critical here?"
+- "Is this severe?"
+- "Explain this abnormal value"
+- "What should be reviewed urgently?"
+
+→ Respond with:
+- Very brief bullet points
+- Only information present or directly inferable from the report
+- No full structured format
+- No external explanations
+
+C) OUT-OF-SCOPE HANDLING
+If the input is:
+- Not a pathology report
+- Not related to the provided pathology report
+
+→ Respond exactly with:
+"Input is outside pathology report scope."
 
 DOMAIN LOCK:
 - Allowed: pathology, biopsy, histopathology.
@@ -322,9 +371,12 @@ INSTRUCTIONS:
 
         # Save assistant reply to history
         session["history"].append({"role": "assistant", "content": answer})
+        broken_json= answer
+        clean_text = json_to_text(broken_json)
         
-        response = JSONResponse({"answer": answer})
+        response = JSONResponse({"answer": clean_text})
         response.set_cookie(SESSION_COOKIE_NAME, sid, httponly=True, samesite=COOKIE_SAMESITE, secure=COOKIE_SECURE)
+        print(response)
         return response
 
     except HTTPException:

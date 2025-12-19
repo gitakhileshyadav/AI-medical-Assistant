@@ -1,173 +1,192 @@
-function loadScript(src) {
-  return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) {
-      // already added
-      resolve();
-      return;
-    }
-    const s = document.createElement('script');
-    s.src = src;
-    s.async = true;
-    s.onload = () => resolve();
-    s.onerror = (e) => reject(new Error('Failed to load ' + src));
-    document.head.appendChild(s);
-  });
-}
+/* ===========================
+   MedVision – Production App.js
+   =========================== */
 
-async function startVanta() {
-  try {
-    // load three + vanta
-    await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js');
-    await loadScript('https://cdn.jsdelivr.net/npm/vanta@latest/dist/vanta.globe.min.js');
-    // init vanta
-    if (window.VANTA && window.VANTA.GLOBE) {
-      window.vantaEffect = window.VANTA.GLOBE({
-        el: "#vanta-bg",
-        mouseControls: true,
-        touchControls: true,
-        minHeight: 200.00,
-        minWidth: 200.00,
-        scale: 1.0,
-        scaleMobile: 1.0,
-        color: 0x7c3aed,
-        color2: 0x06b6d4,
-        backgroundColor: 0x021026,
-        size: 1.1
-      });
-    }
-  } catch (err) {
-    // fail silently - Vanta is nice-to-have but not required
-    console.warn('Vanta init failed:', err);
-  }
-}
+document.addEventListener("DOMContentLoaded", () => {
+  const chat = document.getElementById("chat");
+  const fileInput = document.getElementById("file");
+  const preview = document.getElementById("preview");
+  const previewEmpty = document.getElementById("preview-empty");
+  const queryInput = document.getElementById("query");
+  const sendBtn = document.getElementById("send");
+  const resetBtn = document.getElementById("reset");
 
-//App behavior: chat + file handling
-document.addEventListener('DOMContentLoaded', async () => {
-  await startVanta();
+  let selectedFile = null;
+  let isSending = false;
 
-  const fileInput = document.getElementById('file');
-  const preview = document.getElementById('preview');
-  const previewEmpty = document.getElementById('preview-empty');
-  const resetBtn = document.getElementById('reset');
-  const chat = document.getElementById('chat');
-  const sendBtn = document.getElementById('send');
-  const queryInput = document.getElementById('query');
+  /* ---------- Utilities ---------- */
 
-  let firstRequest = true;
+  const escapeHTML = (str) =>
+    str.replace(/[&<>"']/g, (m) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m])
+    );
 
-  function addMessage(text, who='bot') {
-    const container = document.createElement('div');
-    container.className = 'msg ' + (who === 'user' ? 'user' : 'bot');
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble ' + (who === 'user' ? 'user' : 'bot');
-    bubble.textContent = text;
-    container.appendChild(bubble);
-    chat.appendChild(container);
+  const scrollToBottom = () => {
     chat.scrollTop = chat.scrollHeight;
+  };
+
+  const spacer = () => {
+    const div = document.createElement("div");
+    div.style.height = "14px";
+    return div;
+  };
+
+  /* ---------- UI Builders ---------- */
+
+  function addUserMessage(text) {
+    const msg = document.createElement("div");
+    msg.className = "msg user";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+    bubble.textContent = text;
+
+    msg.appendChild(bubble);
+    chat.appendChild(msg);
+    chat.appendChild(spacer());
+    scrollToBottom();
   }
 
-  function resizeFileToBlob(file, maxWidth = 1024, quality = 0.78) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onerror = reject;
-      reader.onload = () => {
-        const img = new Image();
-        img.onerror = reject;
-        img.onload = () => {
-          const scale = Math.min(1, maxWidth / img.width);
-          const canvas = document.createElement('canvas');
-          canvas.width = Math.round(img.width * scale);
-          canvas.height = Math.round(img.height * scale);
-          const ctx = canvas.getContext('2d');
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => {
-            if (!blob) reject(new Error('Canvas toBlob failed'));
-            else resolve(blob);
-          }, 'image/jpeg', quality);
-        };
-        img.src = reader.result;
-      };
-      reader.readAsDataURL(file);
+  function addAssistantMessage(text) {
+    const msg = document.createElement("div");
+    msg.className = "msg bot";
+
+    const bubble = document.createElement("div");
+    bubble.className = "bubble";
+
+    const blocks = text.split("•");
+    blocks.forEach((b, i) => {
+      const clean = b.trim();
+      if (!clean) return;
+
+      const p = document.createElement("p");
+      p.textContent = i === 0 ? clean : "• " + clean;
+      bubble.appendChild(p);
     });
+
+    /* Copy Button */
+    const copyBtn = document.createElement("button");
+    copyBtn.textContent = "Copy";
+    copyBtn.style.marginTop = "10px";
+    copyBtn.style.fontSize = "12px";
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(text);
+      copyBtn.textContent = "Copied ✓";
+      setTimeout(() => (copyBtn.textContent = "Copy"), 1500);
+    };
+
+    bubble.appendChild(copyBtn);
+    msg.appendChild(bubble);
+    chat.appendChild(msg);
+    chat.appendChild(spacer());
+    scrollToBottom();
   }
 
-  fileInput.addEventListener('change', (e) => {
-    const f = e.target.files[0];
-    if (!f) { preview.innerHTML = '<div class="muted">No image selected</div>'; return; }
-    const url = URL.createObjectURL(f);
-    preview.innerHTML = '<img src="' + url + '" alt="Uploaded image preview" />';
+  function addLoader() {
+    const loader = document.createElement("div");
+    loader.id = "loader";
+    loader.className = "msg bot";
+    loader.innerHTML = `<div class="bubble">Analyzing image…</div>`;
+    chat.appendChild(loader);
+    scrollToBottom();
+  }
+
+  function removeLoader() {
+    const loader = document.getElementById("loader");
+    if (loader) loader.remove();
+  }
+
+  /* ---------- Image Handling ---------- */
+
+  function showPreview(file) {
+    preview.innerHTML = "";
+    const img = document.createElement("img");
+    img.src = URL.createObjectURL(file);
+    img.onload = () => URL.revokeObjectURL(img.src);
+    preview.appendChild(img);
+  }
+
+  function handleFile(file) {
+    if (!file || !file.type.startsWith("image/")) return;
+    selectedFile = file;
+    previewEmpty.style.display = "none";
+    showPreview(file);
+  }
+
+  fileInput.addEventListener("change", (e) => {
+    handleFile(e.target.files[0]);
   });
 
-  resetBtn.addEventListener('click', async () => {
-    await fetch('/reset', { method: 'POST' }).catch(()=>{});
-    preview.innerHTML = '<div class="muted">No image selected</div>';
-    chat.innerHTML = '';
-    firstRequest = true;
-    addMessage('Conversation reset. Upload a new image to begin.', 'bot');
-  });
-
-  sendBtn.addEventListener('click', async (e) => {
+  /* Drag & Drop */
+  preview.addEventListener("dragover", (e) => {
     e.preventDefault();
+    preview.style.borderColor = "#38bdf8";
+  });
+
+  preview.addEventListener("dragleave", () => {
+    preview.style.borderColor = "";
+  });
+
+  preview.addEventListener("drop", (e) => {
+    e.preventDefault();
+    preview.style.borderColor = "";
+    handleFile(e.dataTransfer.files[0]);
+  });
+
+  /* ---------- Send Message ---------- */
+
+  async function sendMessage() {
+    if (isSending) return;
+
     const query = queryInput.value.trim();
     if (!query) return;
-    const file = fileInput.files.length ? fileInput.files[0] : null;
-    if (firstRequest && !file) {
-      addMessage('Please upload an image for the first request.', 'bot');
-      return;
+
+    isSending = true;
+    addUserMessage(query);
+    queryInput.value = "";
+    addLoader();
+
+    const formData = new FormData();
+    formData.append("query", query);
+    if (selectedFile) {
+      formData.append("image_file", selectedFile);
+      selectedFile = null; // image only once
     }
 
-    addMessage(query, 'user');
-
-    // loading bubble
-    const loadingBubble = document.createElement('div');
-    loadingBubble.className = 'msg bot';
-    loadingBubble.innerHTML = '<div class="bubble bot">Analyzing… <span style="margin-left:8px">⏳</span></div>';
-    chat.appendChild(loadingBubble);
-    chat.scrollTop = chat.scrollHeight;
-
-    const form = new FormData();
-    form.append('query', query);
-
-    if (firstRequest && file) {
-      try {
-        const blob = await resizeFileToBlob(file, 1024, 0.78);
-        form.append('image_file', blob, 'upload.jpg');
-      } catch (err) {
-        loadingBubble.remove();
-        addMessage('Image processing failed: ' + err.message, 'bot');
-        return;
-      }
-    }
-
-    sendBtn.disabled = true;
     try {
-      const res = await fetch('/analyze', { method: 'POST', body: form });
-      const text = await res.text();
-      loadingBubble.remove();
+      const res = await fetch("/analyze", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+      removeLoader();
+
       if (!res.ok) {
-        addMessage('Server error: ' + text, 'bot');
-        sendBtn.disabled = false;
-        return;
+        addAssistantMessage(data.detail || "Server error");
+      } else {
+        addAssistantMessage(data.answer);
       }
-      const data = JSON.parse(text);
-      addMessage(data.answer || 'No answer returned', 'bot');
-      firstRequest = false;
     } catch (err) {
-      loadingBubble.remove();
-      addMessage('Network error: ' + err.message, 'bot');
+      removeLoader();
+      addAssistantMessage("Network error. Please retry.");
     } finally {
-      sendBtn.disabled = false;
-      queryInput.value = '';
+      isSending = false;
     }
+  }
+
+  sendBtn.addEventListener("click", sendMessage);
+
+  queryInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendMessage();
   });
 
-  queryInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendBtn.click();
-    }
-  });
+  /* ---------- Reset ---------- */
 
-  // initial greeting
-  addMessage('Welcome! Upload an image and ask a question to start analysis.', 'bot');
+  resetBtn.addEventListener("click", async () => {
+    await fetch("/reset", { method: "POST" });
+    chat.innerHTML = "";
+    preview.innerHTML = `<div class="muted" id="preview-empty">No image selected</div>`;
+    selectedFile = null;
+  });
 });
